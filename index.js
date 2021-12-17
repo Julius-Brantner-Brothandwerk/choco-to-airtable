@@ -4,7 +4,9 @@ const axios = require('axios')
 var Airtable = require('airtable');
 
 const AIRTABLE_API_KEY = process.env['AIRTABLE_API_KEY']
-let base = new Airtable({ apiKey: AIRTABLE_API_KEY }).base('appj612hnjK0mcCgp');
+const AIRTABLE_BASE = process.env['AIRTABLE_BASE']
+
+let base = new Airtable({ apiKey: AIRTABLE_API_KEY }).base(AIRTABLE_BASE);
 
 const app = express();
 app.use(bodyParser.json()) // for parsing application/json
