@@ -9,26 +9,42 @@ const AIRTABLE_BASE = process.env['AIRTABLE_BASE']
 let base = new Airtable({ apiKey: AIRTABLE_API_KEY }).base(AIRTABLE_BASE);
 
 const app = express();
-app.use(bodyParser.json()) // for parsing application/json
+app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended: true }))
 
-app.get('/', (req, res) => {
-  res.send('Hello Express app!')
-});
-
 app.post('/new-order', async (req, res) => {
+  const articleUrl = `https://api.airtable.com/v0/appj612hnjK0mcCgp/Artikel?&pageSize=50&view=Standard+Ansicht`
+  const customerUrl = 'https://api.airtable.com/v0/appj612hnjK0mcCgp/Kunden?pageSize=100&view=Standard+Ansicht'
+  const records = []
   const { restaurant, orderProducts, deliveryDate } = req.body
-  console.log(restaurant[0])
-   
+
+  const airtableArticle = await fetchAirtable(articleUrl)
+  const airtableCustomers = await fetchAirtable(customerUrl)
+  const articleDict = arrayToDict(airtableArticle, 'Artikelnummer')
+  const customerDict = arrayToDict(airtableCustomers, 'Kundennummer')
+  delete customerDict[undefined]
+  delete articleDict[undefined]
   
+  if (restaurant[0].customerNumber === undefined) return res.sendStatus(422)
+  if (customerDict[`${restaurant[0].customerNumber}`] === undefined) return res.sendStatus(422)
 
+  const airtableCustomerId = customerDict[`${restaurant[0].customerNumber}`].id
 
-  // const articleUrl = `https://api.airtable.com/v0/appj612hnjK0mcCgp/Artikel?&pageSize=50&view=Standard+Ansicht`
-  // const customerUrl = 'https://api.airtable.com/v0/appj612hnjK0mcCgp/Kunden?pageSize=100&view=Standard+Ansicht'
-  // const article = await fetchAirtable(articleUrl)
-  // const customer = await fetchAirtable(customerUrl)
-  // const aritcleDict = arrayToDict(article, 'Artikelnummer')
-  // const customerDict = arrayToDict(customer, 'Kundennummer')
+  for (const order of orderProducts[0].product) {
+    if (articleDict[`${order.externalId}`] === undefined) return res.sendStatus(422)
+    let airtableArticleId = articleDict[`${order.externalId}`].id
+    let lineItemRecord = {
+      "fields": {
+        "Kunde": [airtableCustomerId],
+        "Artikel": [airtableArticleId],
+        "Menge": +order.amount,
+        "Lieferzeitpunkt": deliveryDate
+      }
+    }
+    records.push(lineItemRecord)
+  }
+
+  const request = await createLineItem(records)
 
   res.sendStatus(200)
 });
@@ -36,7 +52,6 @@ app.post('/new-order', async (req, res) => {
 app.listen(3000, () => {
   console.log('server started');
 });
-
 
 async function fetchAirtable(baseUrl, offset = '') {
   let url = `${baseUrl}`
@@ -66,4 +81,19 @@ function arrayToDict(array, key) {
     newDict[record.fields[key]] = { ...record }
   })
   return newDict
+}
+
+async function createLineItem(records) {
+  const headers = { 'Authorization': `Bearer ${AIRTABLE_API_KEY}` }
+  console.log(headers)
+  const url = 'https://api.airtable.com/v0/appj612hnjK0mcCgp/Einzelposten'
+  try {
+    const response = await axios.post(url, { records: records }, { headers: headers })
+    if (response) {
+      console.log("response", response.data)
+    }
+  } catch (error) {
+    console.error("error", error.toJSON())
+  }
+
 }
